@@ -20,7 +20,9 @@ import {
   Sun,
   Moon,
   User as UserIcon,
-  Wifi
+  Wifi,
+  Radio,
+  ExternalLink
 } from 'lucide-react';
 import MapSection from './components/MapSection';
 import NewsFeed from './components/NewsFeed';
@@ -34,6 +36,7 @@ import IncidentReporting from './components/IncidentReporting';
 import { LANGUAGES, EMERGENCY_CONTACTS } from './constants';
 import { translations } from './translations';
 import { NewsUpdate, UserData } from './types';
+import { getLiveIndianThreats, LiveThreat } from './services/geminiService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'map' | 'explorer' | 'services' | 'support' | 'admin' | 'budget' | 'reports'>('map');
@@ -51,6 +54,9 @@ const App: React.FC = () => {
   
   const [customAlerts, setCustomAlerts] = useState<NewsUpdate[]>([]);
   const [countdown, setCountdown] = useState(5);
+
+  const [liveThreats, setLiveThreats] = useState<LiveThreat[]>([]);
+  const [threatLoading, setThreatLoading] = useState(false);
 
   const t = translations[language] || translations.en;
 
@@ -87,7 +93,16 @@ const App: React.FC = () => {
     }
 
     document.documentElement.className = theme;
-  }, [theme]);
+
+    // 3. Fetch Real-time Disaster Intel from Google Search
+    const fetchLiveThreats = async () => {
+      setThreatLoading(true);
+      const threats = await getLiveIndianThreats(language);
+      setLiveThreats(threats);
+      setThreatLoading(false);
+    };
+    fetchLiveThreats();
+  }, [theme, language]);
 
   useEffect(() => {
     let timer: any;
@@ -202,6 +217,44 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+        
+        {/* Real-time Threat Ticker (Powered by Google Search) */}
+        <div className="bg-slate-900/50 border-t border-[var(--border-panel)] py-2.5 overflow-hidden">
+          <div className="max-w-screen-2xl mx-auto px-6 flex items-center gap-4">
+            <div className="flex items-center gap-2 shrink-0 bg-rose-600 px-3 py-1 rounded-md">
+              <Radio className="w-3 h-3 text-white animate-pulse" />
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">LIVE INTEL</span>
+            </div>
+            <div className="flex-1 overflow-hidden relative h-5">
+               <div className="flex gap-12 whitespace-nowrap animate-marquee">
+                  {threatLoading ? (
+                    <span className="text-[10px] font-bold text-slate-500 uppercase italic">Intercepting satellite news signals...</span>
+                  ) : liveThreats.length > 0 ? (
+                    liveThreats.map((threat, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <AlertTriangle className={`w-3 h-3 ${threat.severity === 'URGENT' ? 'text-rose-500' : 'text-amber-500'}`} />
+                        <span className="text-[10px] font-black text-slate-300 uppercase">
+                          <span className="text-white">{threat.location}</span>: {threat.description}
+                        </span>
+                        {threat.link && <ExternalLink className="w-2.5 h-2.5 text-indigo-400" />}
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Global Sector Status: STABLE • No major disasters reported in India via real-time search.</span>
+                  )}
+               </div>
+            </div>
+          </div>
+          <style>{`
+            @keyframes marquee {
+              0% { transform: translateX(100%); }
+              100% { transform: translateX(-100%); }
+            }
+            .animate-marquee {
+              animation: marquee 40s linear infinite;
+            }
+          `}</style>
         </div>
       </nav>
 

@@ -47,12 +47,64 @@ export interface IncidentAnalysis {
   estimatedImpact: string;
 }
 
+export interface RiskZoneResponse {
+  center: [number, number];
+  zones: DisasterZone[];
+  isDisasterActive: boolean;
+  statusSummary: string;
+}
+
+export interface LiveThreat {
+  location: string;
+  type: string;
+  severity: 'URGENT' | 'ADVISORY' | 'STABLE';
+  description: string;
+  link?: string;
+}
+
+/**
+ * Fetch real-time active natural disasters in India using Google Search Grounding.
+ */
+export const getLiveIndianThreats = async (language: string = 'en'): Promise<LiveThreat[]> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: "Search for current active natural disasters in India (floods, cyclones, earthquakes, heatwaves, landslides) happening TODAY. Provide a list of locations and status. Return as JSON.",
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              location: { type: Type.STRING },
+              type: { type: Type.STRING },
+              severity: { type: Type.STRING, enum: ["URGENT", "ADVISORY", "STABLE"] },
+              description: { type: Type.STRING },
+              link: { type: Type.STRING }
+            },
+            required: ["location", "type", "severity", "description"]
+          }
+        }
+      }
+    });
+
+    const text = cleanAIJsonResponse(response.text || "[]");
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("Live threat lookup failed:", error);
+    return [];
+  }
+};
+
 export const getAIGeneratedAlerts = async (location: string, language: string = 'en'): Promise<NewsUpdate[]> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Generate 3 realistic disaster management news updates for ${location}. Include one URGENT, one UPDATE, and one ADVISORY. Return as a JSON array of objects with fields: id, title, timestamp, category (URGENT, UPDATE, or ADVISORY), and content. Respond in ${language} language.`,
+      contents: `Search for real news about disaster management or environmental alerts for ${location}, India today. Return as 3 realistic objects in a JSON array. Fields: id, title, timestamp, category (URGENT, UPDATE, or ADVISORY), and content. Respond in ${language} language.`,
       config: {
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -83,7 +135,7 @@ export const getIndiaLocationDetails = async (location: string, language: string
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Search for details for location "${location}" in India. MUST include current real-time weather data (temp in C, condition, humidity, wind). Return as JSON. Respond in ${language} language.`,
+      contents: `Search for details for location "${location}" in India using official and updated sources. MUST include real-time weather, lat, lng, and regional status. Return as JSON.`,
       config: {
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
@@ -158,8 +210,9 @@ export const broadcastProfessionalAlert = async (brief: string, language: string
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Transform this brief emergency message into a professional disaster alert: "${brief}". Return as JSON. Respond in ${language} language.`,
+      contents: `Transform this emergency message into a professional disaster alert with search validation: "${brief}". Return as JSON.`,
       config: {
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -187,17 +240,23 @@ export const broadcastProfessionalAlert = async (brief: string, language: string
   }
 };
 
-export const generateAreaRiskZones = async (location: string, language: string = 'en'): Promise<{ center: [number, number], zones: DisasterZone[] }> => {
+export const generateAreaRiskZones = async (location: string, language: string = 'en'): Promise<RiskZoneResponse> => {
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Analyze the geography of "${location}" in India. Provide its center coordinates [lat, lng] and 4-5 simulated disaster risk zones (Red for critical danger, Yellow for relief/warning, Green for safe zones). Return as JSON. Respond in ${language} language.`,
+      contents: `Search for active natural disasters in "${location}", India RIGHT NOW. Use real-time data from news and official sources. 
+      If a disaster is active, provide its center coordinates [lat, lng] and 4-5 simulated risk zones for strategic planning. 
+      If NO disaster is active, set isDisasterActive to false. 
+      Return as JSON.`,
       config: {
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
             center: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+            isDisasterActive: { type: Type.BOOLEAN },
+            statusSummary: { type: Type.STRING },
             zones: {
               type: Type.ARRAY,
               items: {
@@ -215,7 +274,7 @@ export const generateAreaRiskZones = async (location: string, language: string =
               }
             }
           },
-          required: ["center", "zones"]
+          required: ["center", "isDisasterActive", "statusSummary", "zones"]
         }
       }
     });
@@ -224,11 +283,18 @@ export const generateAreaRiskZones = async (location: string, language: string =
     const data = JSON.parse(text);
     return {
       center: data.center ? [data.center[0], data.center[1]] : [20.5937, 78.9629],
+      isDisasterActive: data.isDisasterActive || false,
+      statusSummary: data.statusSummary || "No active threat detected via real-time satellite search.",
       zones: data.zones || []
     };
   } catch (error) {
     console.error("Risk zone generation failed:", error);
-    return { center: [20.5937, 78.9629], zones: [] };
+    return { 
+      center: [20.5937, 78.9629], 
+      zones: [], 
+      isDisasterActive: false, 
+      statusSummary: "Strategic search offline." 
+    };
   }
 };
 
@@ -376,7 +442,7 @@ export const searchNearbyPlaces = async (query: string, lat: number, lng: number
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `${query}. Respond in ${language} language.`,
+      contents: `Find official and currently open ${query} in this area. Respond in ${language} language.`,
       config: {
         tools: [{ googleMaps: {} }],
         toolConfig: {
@@ -388,7 +454,7 @@ export const searchNearbyPlaces = async (query: string, lat: number, lng: number
     });
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const links = chunks.filter((c: any) => c.maps).map((c: any) => ({ title: c.maps.title, uri: c.maps.uri }));
-    return { text: response.text || "No results found.", links };
+    return { text: response.text || "No verified results found in this sector.", links };
   } catch (error) {
     return { text: "Search failed.", links: [] };
   }
@@ -398,12 +464,14 @@ export const getEmergencyServicesInIndia = async (location: string, type: string
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Find ${type} in ${location}, India. Respond in ${language} language.`,
-      config: { tools: [{ googleMaps: {} }] },
+      contents: `Find the most reputable and currently operational ${type} in ${location}, India. Respond in ${language} language.`,
+      config: { 
+        tools: [{ googleMaps: {} }, { googleSearch: {} }] 
+      },
     });
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const links = chunks.filter((c: any) => c.maps).map((c: any) => ({ title: c.maps.title, uri: c.maps.uri }));
-    return { text: response.text || "No facilities found.", links };
+    return { text: response.text || "No active facilities verified in this region.", links };
   } catch (error) {
     return { text: "Lookup failed.", links: [] };
   }
@@ -416,10 +484,11 @@ export const analyzeIncidentImage = async (base64Image: string, mimeType: string
       contents: {
         parts: [
           { inlineData: { data: base64Image.split(',')[1] || base64Image, mimeType } },
-          { text: `Analyze the severity of this disaster-related incident. Return JSON with severity, summary, safetySteps, and estimatedImpact. Respond in ${language} language.` }
+          { text: `Analyze the severity of this disaster-related incident. Search for similar patterns if possible. Return JSON with severity, summary, safetySteps, and estimatedImpact. Respond in ${language} language.` }
         ]
       },
       config: {
+        tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
