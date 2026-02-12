@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
 
   return {
-    base: '/resq_-ai-disaster-relief-assistant/',  // 👈 ADD THIS LINE
+    base: '/RESQ/',
 
     server: {
       port: 3000,
